@@ -23,3 +23,5 @@ General Controls:
 	Pause = Esc
 
 Have fun!
+
+![Screenshot](https://github.com/DusanDimitric/Trigonium/blob/master/screenshot.png)
