@@ -1,0 +1,474 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="utf-8" />
+	<title>Trigonium</title>
+
+	<!-- Quick CSS format -->
+	<style>
+		body {
+			text-align: center;
+			font-family: Verdana, Geneva, sans-serif;
+			margin: 0;
+		}
+	</style>
+
+</head>
+<body>
+	<canvas id="canvas" width="1024" height="768"></canvas>
+</body>
+
+<!-- I've loaded the entire game in this one script tag to make it easy to run/distribute -->
+<script type="text/javascript">
+
+	/* jshint esnext: true */
+
+	(function() {
+		"use strict";
+
+		// Constants
+		const canvas = document.getElementById('canvas');
+		const canvasWidth  = canvas.width = document.body.clientWidth;
+		const canvasHeight = canvas.height = document.documentElement.clientHeight - 3;
+
+		const context = canvas.getContext('2d');
+
+		// Vector constructor
+		var Vector = function(x, y) {
+			this.x = x;
+			this.y = y;
+		};
+
+		// Triangle vertices
+		var vertices = [
+			new Vector(0, 0),
+			new Vector(0, 0),
+			new Vector(0, 0)
+		];
+
+		var Projectile = function(player) {
+			this.x = player.x;
+			this.y = player.y;
+			this.xVel =  Math.sin(player.orientation) * 20;
+			this.yVel = -Math.cos(player.orientation) * 20;
+			this.color = player.color;
+			this.index = players.indexOf(player);
+		};
+
+		Projectile.prototype.update = function() {
+			this.x += this.xVel;
+			this.y += this.yVel;
+			this.checkCollision();
+		};
+
+		Projectile.prototype.checkCollision = function() {
+			for (let i = 0; i < players.length; i++) {
+				if (i !== this.index) {
+					var xDist = Math.abs(this.x - players[i].x);
+					var yDist = Math.abs(this.y - players[i].y);
+					if (xDist < players[i].size / 2 && yDist < players[i].size / 2) {
+						players[i].destroyed = true;
+					}
+				}
+			}
+		};
+
+		Projectile.prototype.render = function() {
+			// Projectile is a circle
+			context.fillStyle = this.color;
+			context.beginPath();
+			context.arc(this.x, this.y, 2, 0, Math.PI * 2);
+			context.fill();
+		};
+
+		// Player constructor
+		var Player = function(x, y, size, color, vel, orientation) {
+			this.x = x;
+			this.y = y;
+			this.size = size;
+			this.yOffset = Math.sqrt(size * size - (size / 2) * (size / 2)) / 2;
+			this.thrust = 0;
+			this.color = color;
+			this.velocity = vel;
+			this.accelerating = false;
+			this.defaultVel = 0;
+			this.orientation = orientation; // this.orientation goes form 0 to (Pi * 2) radians
+			this.turning = false;
+			this.trail = {
+				particles: [],
+				index: 0,
+				moveIndex: function() {
+					this.index++;
+					if (this.index >= this.particles.length)
+						this.index = this.index % this.particles.length;
+				},
+				update: function(x, y) {
+					this.particles[this.index].x = x;
+					this.particles[this.index].y = y;
+					this.moveIndex();
+				}
+			};
+			for (let i = 0; i < 10; i++)
+				this.trail.particles.push(new Vector(x, y));
+
+			this.firing = false;
+			this.charged = 10;
+			this.projectiles = [];
+			this.destroyed = false;
+		};
+
+		Player.prototype.update = function() {
+
+			// Update projectiles
+			if (this.projectiles.length <= 0 && this.destroyed) {
+				players.splice(players.indexOf(this), 1);
+				if (players.length === 1)
+					restartGame();
+			}
+
+			for (let i = 0; i < this.projectiles.length; i++) {
+				var projectile = this.projectiles[i];
+				projectile.update();
+				if (projectile.x > canvasWidth || projectile.x < 0 || projectile.y < 0 || projectile.y > canvasHeight)
+					this.projectiles.splice(this.projectiles.indexOf(projectile), 1);
+			}
+
+			if (this.destroyed === false) {
+				if (this.accelerating === false && this.thrust <= this.defaultVel)
+					this.decelerate();
+				else if (this.accelerating === true && this.thrust <= this.defaultVel)
+					this.accelerate();
+
+				if (this.turning !== false)
+					this.turn();
+
+				if (this.thrust !== 0)
+					this.x += this.thrust * -Math.sin(this.orientation);
+				if (this.thrust !== 0)
+					this.y += this.thrust * Math.cos(this.orientation);
+
+				// Check if out of bounds
+				if (this.x < this.size / 2)
+					this.x = this.size / 2;
+				else if (this.x > canvasWidth - this.size / 2)
+					this.x = canvasWidth - this.size / 2;
+
+				if (this.y < this.size / 2)
+					this.y = this.size / 2;
+				else if (this.y > canvasHeight - this.size / 2)
+					this.y = canvasHeight - this.size / 2;
+
+				this.trail.update(this.x, this.y);
+
+				if (this.firing === true)
+					this.fire();
+			}
+		};
+
+		Player.prototype.accelerate = function() {
+			if (this.thrust >= -this.velocity)
+				if (this.thrust >= -this.velocity / 3)
+					this.thrust -= (this.velocity * ((this.velocity + this.thrust) / this.velocity) / 10);
+				else
+					this.thrust -= (this.velocity * ((this.velocity + this.thrust) / this.velocity) / 1.4);
+		};
+
+		Player.prototype.decelerate = function() {
+			var modifier = (this.velocity * ((this.velocity + this.thrust) / this.velocity) / 20 + 0.01);
+			this.thrust += modifier;
+			if (this.thrust >= this.defaultVel) {
+				this.accelerating = false;
+				this.thrust = this.defaultVel;
+			}
+
+		};
+
+		Player.prototype.turn = function() {
+			if (this.turning === 'left')
+				this.orientation -= 0.06;
+			else if (this.turning === 'right')
+				this.orientation += 0.06;
+
+			if (this.orientation < 0)
+				this.orientation = (Math.PI * 2);
+
+			if ((this.orientation / (Math.PI * 2)) > 1)
+				this.orientation = this.orientation % (Math.PI * 2);
+	 	};
+
+	 	Player.prototype.fire = function() {
+	 		if (this.charged === 10) {
+	 			this.projectiles.push(new Projectile(this));
+	 			this.charged = 0;
+	 		} else if (this.charged < 10) {
+	 			this.charged += 2;
+	 		}
+	 	};
+
+		Player.prototype.render = function() {
+			
+			// Render projectiles
+			this.projectiles.forEach((projectile) => { 
+				projectile.render(); 
+			});
+
+			if (this.destroyed === false) {
+
+				if (this.thrust !== 0)
+					this.renderTrail();
+
+				// Draw the player as a triangle
+				context.fillStyle = this.color;
+				context.beginPath();
+				updatevertices(this);
+				context.moveTo(vertices[0].x, vertices[0].y);
+				context.lineTo(vertices[1].x, vertices[1].y);
+				context.lineTo(vertices[2].x, vertices[2].y);
+				context.fill();
+
+				// Draw a circle inside the player (triangle)
+				context.fillStyle = 'black';
+				context.beginPath();
+				context.arc(this.x, this.y, 2, 0, Math.PI * 2);
+				context.fill();
+			}
+			
+		};
+
+		function updatevertices(player) {
+			// 1. vertex, top
+			vertices[0].x = player.x + Math.sin(player.orientation) * player.yOffset;
+			vertices[0].y = player.y - Math.cos(player.orientation) * player.yOffset;
+
+			// 2. vertex, lower right
+			vertices[1].x = player.x + Math.sin(player.orientation + Math.PI / 1.5) * player.yOffset;
+			vertices[1].y = player.y - Math.cos(player.orientation + Math.PI / 1.5) * player.yOffset;
+
+			// 3. vertex, lower left
+			vertices[2].x = player.x + Math.sin(player.orientation + Math.PI / 0.75) * player.yOffset;
+			vertices[2].y = player.y - Math.cos(player.orientation + Math.PI / 0.75) * player.yOffset;
+		}
+
+	 	Player.prototype.renderTrail = function() {
+	 		var index = this.trail.index;
+	 		var diff, size, perc = 0;
+
+	 		this.trail.particles.forEach(function(particle, currentIndex) {
+	 			diff = (index - currentIndex);
+	 			if (diff <= 0)
+	 				perc = (10 - 10 - diff) / 10;
+	 			else
+	 				perc = (10 - diff) / 10;
+	 			size = 6 * perc;
+	 			// Draw little white circles
+				context.fillStyle = `rgba(255, 255, 255, ${perc / 1.5})`;
+				context.beginPath();
+				context.arc(particle.x, particle.y, size, 0, Math.PI * 2);
+				context.fill();
+	 		});
+	 	};
+
+		// Game variables
+		var player1, player2;
+		var players = [];
+
+		var paused, restarting, restartTime;
+
+
+		/* --------------------------------- THIS IS WHERE THE GAME STARTS --------------------------------- */
+		// Our game loop (can't be done with a do...while loop for some reason...)
+		
+
+		
+		function newGame() {
+			players = [];
+			// Create a player  (xPosition,                   yPosition,                        size, color,            speed, orientation                );
+			player1 = new Player(Math.random() * canvasWidth, Math.random() * canvasHeight, 30,   'rgb(100, 100, 255)', 10,    Math.random() * Math.PI * 2);
+			player2 = new Player(Math.random() * canvasWidth, Math.random() * canvasHeight, 30,   'rgb(255, 100, 100)', 10,    Math.random() * Math.PI * 2);
+			players = [player1, player2];
+
+			// Check for player collision, this disallows players to spawn at the same place
+			for (let i = 0; i < players.length; i++) { 
+
+				for (let j = 0; j < players.length; j++) {
+
+					if (j !== players.indexOf(players[i])) {
+						var xDist = Math.abs(players[i].x - players[j].x);
+						var yDist = Math.abs(players[i].y - players[j].y);
+						var minDist = (players[i].size + players[j].size) / 2;
+
+						if (xDist < minDist && yDist < minDist) {
+							newGame();
+						}
+					}
+
+				}
+				
+			}
+
+			// Game variables
+			paused = false;
+			restarting = false;
+			restartTime = 3; // seconds
+		}
+
+		newGame();
+
+		window.requestAnimationFrame(gameCycle);
+
+		function gameCycle() {
+
+			update();
+			render();
+
+			if (paused === false)
+				window.requestAnimationFrame(gameCycle);
+			else if (paused === true && restarting === false) { // Game is paused
+				// Draw pause text
+				context.font = '40px Verdana, Geneva, sans-serif';
+				context.fillStyle = 'red';
+				context.textAlign = 'center';
+				context.fillText('PAUSED', canvasWidth / 2, canvasHeight / 2);
+
+			} else if (paused === true && restarting === true) { // restart the game
+				window.requestAnimationFrame(gameCycle);
+				// Draw pause text
+				context.font = '25px Verdana, Geneva, sans-serif';
+				context.fillStyle = 'red';
+				context.textAlign = 'center';
+				context.fillText(`Restarting in: ${restartTime}`, canvasWidth / 2, canvasHeight / 2);
+			}
+		}
+
+		var update = function() {
+			// Update the players
+			players.forEach(function(player) {
+				player.update();
+			});
+		};
+
+		var render = function() {
+			// Clear the canvas
+			context.clearRect(0, 0, canvasWidth, canvasHeight);
+			context.fillStyle = 'black';
+			context.fillRect(0, 0, canvasWidth, canvasHeight);
+
+			// Render players
+			players.forEach(function(player) {
+				player.render();
+			});
+		};
+
+		// 37 = left, 38 = up, 39 = right, 40 = down
+		document.addEventListener('keydown', function(event) {
+			switch (event.keyCode) {
+				/* Player 1 Controls: */
+				case 37: // left
+					if (player1.turning !== 'left')
+						player1.turning = 'left';
+					break;
+				case 38: // up
+					if (player1.accelerating === false)
+						player1.accelerating = true;
+					break;
+				case 39: // right
+					if (player1.turning !== 'right')
+						player1.turning = 'right';
+					break;
+				case 16: // ctrl
+					player1.firing = true;
+					break;
+
+				/* Player 2 Controls: */
+				case 87: // w
+					if (player2.accelerating === false)
+						player2.accelerating = true;
+					break;
+				case 68: // d
+					if (player2.turning !== 'right')
+						player2.turning = 'right';
+					break;
+				case 65: // a
+					if (player2.turning !== 'left')
+						player2.turning = 'left';
+					break;
+				case 70: // f (fire)
+					player2.firing = true;
+					break;
+
+				/* Common Controls: */
+				case 27: // escape
+					adjustPause();
+					break;
+				default:
+					break;
+			}
+		});
+
+		document.addEventListener('keyup', function(event) {
+			switch (event.keyCode) {
+				/* Player 1 Controls: */
+				case 37: // left
+					player1.turning = false;
+					break;
+				case 38: // up
+					player1.defaultVel = 0;
+					player1.accelerating = false;
+					break;
+				case 39: // right
+					player1.turning = false;
+					break;
+				case 16: // ctrl
+					player1.firing = false;
+					break;
+
+				/* Player 2 Controls: */
+				case 87: // w
+					player2.defaultVel = 0;
+					player2.accelerating = false;
+					break;
+				case 68: // d
+					player2.turning = false;
+					break;
+				case 65: // a
+					player2.turning = false;
+					break;
+				case 70: // f (fire)
+					player2.firing = false;
+					break;
+
+				default:
+					break;
+			}
+		});
+
+		// End the game when the canvas is clicked on
+		function adjustPause() {
+			if (paused === false && restarting === false) {
+				paused = true;
+			} else if (restarting === false) {
+				paused = false;
+				window.requestAnimationFrame(gameCycle);
+			}
+		}
+
+		function restartGame() {
+			restarting = true;
+			paused = true;
+			var restartInterval =setInterval(function() {
+				if (restartTime === 1) {
+					clearInterval(restartInterval);
+					newGame();
+				}
+				restartTime--;
+			}, 1000);
+		}
+
+		window.onbeforeunload = function() {
+			return 'Are you sure you want to end the game?';
+		};
+
+	})();
+
+</script>
+</html>
