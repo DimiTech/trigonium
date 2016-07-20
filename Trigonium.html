@@ -398,7 +398,7 @@
 
 				/* Common Controls: */
 				case 27: // escape
-					adjustPause();
+					togglePause();
 					break;
 				default:
 					break;
@@ -442,8 +442,7 @@
 			}
 		});
 
-		// End the game when the canvas is clicked on
-		function adjustPause() {
+		function togglePause() {
 			if (paused === false && restarting === false) {
 				paused = true;
 			} else if (restarting === false) {
