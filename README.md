@@ -1,4 +1,4 @@
-#Trigonium
+# Trigonium
 
 A small 2 player game I wrote while doing some boring maintanance on the main computer :).
 
