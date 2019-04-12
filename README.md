@@ -2,7 +2,7 @@
 
 A small 2 player game I wrote while doing some boring maintanance on the main computer :).
 
-To play, download and run Trigonium.html in your favorite browser.
+To play, download and run index.html in your favorite browser.
 
 Player 1 Controls:
 
